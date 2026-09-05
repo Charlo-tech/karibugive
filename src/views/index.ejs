@@ -1,0 +1,100 @@
+<%- include('partials/header', { title: 'Karibu Give — Give small, give often' }) %>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <span class="badge">DEV.to Generosity Challenge • USSD • M-Pesa</span>
+      <h1>Give small.<br><span class="accent">Give often.</span></h1>
+      <p>Karibu Give lets anyone with a basic phone — no smartphone, no data — donate small amounts via mobile money to causes that matter. Dial the code, pick a cause, confirm with M-Pesa. That's it.</p>
+      <div class="hero-stats">
+        <div class="stat">
+          <strong>KES <%= stats.totalRaised.toLocaleString() %></strong>
+          <span>total raised</span>
+        </div>
+        <div class="stat">
+          <strong><%= stats.completed %></strong>
+          <span>completed gifts</span>
+        </div>
+        <div class="stat">
+          <strong><%= causes.length %></strong>
+          <span>causes</span>
+        </div>
+      </div>
+    </div>
+    <div class="hero-card">
+      <div class="ussd-card">
+        <div class="ussd-header">📱 No internet needed</div>
+        <div class="ussd-code"><%= ussdCode %></div>
+        <p class="ussd-instruct">Dial <strong><%= ussdCode %></strong> on any phone (Safaricom, Airtel, Telkom) and follow the menu:</p>
+        <ol class="ussd-steps">
+          <li>Choose <em>Donate</em></li>
+          <li>Pick a cause</li>
+          <li>Enter amount</li>
+          <li>Confirm &amp; complete M-Pesa prompt</li>
+        </ol>
+        <p class="muted small">Sandbox code — use a test number like <code>+254711082XXX</code></p>
+      </div>
+      <div class="how-card">
+        <h4>How it works</h4>
+        <ul>
+          <li><strong>USSD</strong> via Africa's Talking</li>
+          <li><strong>M-Pesa STK Push</strong> for payment</li>
+          <li><strong>SQLite</strong> ledger + <strong>Snowflake</strong> analytics</li>
+          <li><strong>Gemini</strong> &amp; <strong>Cortex</strong> AI summaries</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="causes">
+  <div class="section-inner">
+    <h2>Causes</h2>
+    <p class="muted">Donations only happen via USSD — this page shows live progress.</p>
+    <div class="cause-grid">
+      <% causes.forEach(c => { %>
+        <div class="cause-card">
+          <div class="cause-head">
+            <span class="cause-emoji"><%= c.emoji %></span>
+            <h3><%= c.name %></h3>
+          </div>
+          <p class="cause-desc"><%= c.description %></p>
+          <div class="progress-wrap">
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: <%= c.progress %>%"></div>
+            </div>
+            <div class="progress-label">
+              <span>KES <%= c.raised.toLocaleString() %> raised</span>
+              <span><%= c.progress %>% of KES <%= c.target_amount.toLocaleString() %></span>
+            </div>
+          </div>
+          <div class="cause-meta">
+            <span><%= c.count %> gift(s)</span>
+            <span class="tag">Dial <%= ussdCode %></span>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+</section>
+
+<section class="trust">
+  <div class="section-inner">
+    <div class="trust-grid">
+      <div class="trust-card">
+        <h4>🔒 Transparent</h4>
+        <p>Every shilling tracked in SQLite and mirrored to Snowflake. Admin dashboard shows masked phone numbers and AI-generated impact summaries.</p>
+      </div>
+      <div class="trust-card">
+        <h4>⚡ Instant</h4>
+        <p>M-Pesa STK Push completes in seconds. Payment callbacks update status and sync to analytics automatically.</p>
+      </div>
+      <div class="trust-card">
+        <h4>🌍 Accessible</h4>
+        <p>Works on kabambe phones. No app, no data, no account — just your phone number.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

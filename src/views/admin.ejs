@@ -1,0 +1,225 @@
+<%- include('partials/header', { title: 'Admin — Karibu Give' }) %>
+
+<section class="admin">
+  <div class="section-inner">
+    <div class="admin-head">
+      <h1>Admin Dashboard</h1>
+      <div class="admin-actions">
+        <form id="syncForm"><button type="submit" class="btn btn-ghost">↻ Batch sync to Snowflake</button></form>
+        <span id="syncStatus" class="muted small"></span>
+      </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="kpi-grid">
+      <div class="kpi">
+        <span class="kpi-label">Total raised</span>
+        <strong class="kpi-value">KES <%= stats.totalRaised.toLocaleString() %></strong>
+        <span class="kpi-sub"><%= stats.completed %> completed gifts</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Total donations</span>
+        <strong class="kpi-value"><%= stats.totalDonations %></strong>
+        <span class="kpi-sub">all statuses</span>
+      </div>
+      <div class="kpi kpi-small">
+        <span class="kpi-label">Completed</span><strong><%= stats.completed %></strong>
+      </div>
+      <div class="kpi kpi-small kpi-warn">
+        <span class="kpi-label">Pending</span><strong><%= stats.pending %></strong>
+      </div>
+      <div class="kpi kpi-small kpi-danger">
+        <span class="kpi-label">Failed</span><strong><%= stats.failed %></strong>
+      </div>
+    </div>
+
+    <!-- Progress by cause -->
+    <div class="admin-causes">
+      <% raisedByCause.forEach(c => { %>
+        <div class="mini-cause">
+          <span><%= c.emoji %> <strong><%= c.name %></strong></span>
+          <span>KES <%= c.raised.toLocaleString() %> / <%= c.target_amount.toLocaleString() %> (<%= c.progress %>%)</span>
+          <div class="progress-bar small"><div class="progress-fill" style="width: <%= c.progress %>%"></div></div>
+        </div>
+      <% }) %>
+    </div>
+
+    <!-- Two distinct AI cards -->
+    <div class="ai-grid">
+      <!-- Google AI Impact Summary -->
+      <div class="ai-card ai-google">
+        <div class="ai-card-head">
+          <h3>✨ Google AI Impact Summary</h3>
+          <span class="ai-badge google-badge">Gemini 1.5 Flash</span>
+        </div>
+        <p class="muted small">Plain-language donor transparency paragraph — summarizes recent completed donations for public accountability. Powered by <code>@google/generative-ai</code>.</p>
+        <div id="googleSummary" class="ai-output placeholder">Click "Generate summary" to create a donor-facing impact paragraph.</div>
+        <div class="ai-actions">
+          <button id="genGoogle" class="btn btn-primary">Generate summary</button>
+          <span id="googleMeta" class="muted small"></span>
+        </div>
+      </div>
+
+      <!-- Snowflake Cortex Analytics -->
+      <div class="ai-card ai-snowflake">
+        <div class="ai-card-head">
+          <h3>❄️ Snowflake AI Analytics</h3>
+          <span class="ai-badge snow-badge">Cortex COMPLETE · llama3-8b</span>
+        </div>
+        <p class="muted small">Trend analysis over <code>DONATIONS_ANALYTICS</code> — uses <code>SNOWFLAKE.CORTEX.COMPLETE('llama3-8b', …)</code> on aggregates (totals by cause, daily trend, largest gift).</p>
+        <div id="cortexSummary" class="ai-output placeholder">Click "Refresh analytics" to run the Cortex query on demand.</div>
+        <div class="ai-actions">
+          <button id="genCortex" class="btn btn-snow">Refresh analytics</button>
+          <span id="cortexMeta" class="muted small"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <form method="GET" action="/admin" class="filters">
+      <label> Status
+        <select name="status">
+          <option value="">All</option>
+          <option value="pending" <%= filters.status==='pending'?'selected':'' %>>Pending</option>
+          <option value="completed" <%= filters.status==='completed'?'selected':'' %>>Completed</option>
+          <option value="failed" <%= filters.status==='failed'?'selected':'' %>>Failed</option>
+        </select>
+      </label>
+      <label> Cause
+        <select name="cause_id">
+          <option value="">All</option>
+          <% causes.forEach(c=>{ %><option value="<%=c.id%>" <%=filters.cause_id===c.id?'selected':''%>><%=c.name%></option><% }) %>
+        </select>
+      </label>
+      <button type="submit" class="btn btn-sm">Filter</button>
+      <a href="/admin" class="btn btn-ghost btn-sm">Clear</a>
+    </form>
+
+    <!-- Donations table -->
+    <div class="table-wrap">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>#</th><th>Phone (masked)</th><th>Cause</th><th>Amount</th><th>Status</th><th>Checkout ID</th><th>Created</th><th>Synced</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (donations.length===0) { %>
+            <tr><td colspan="8" class="muted center">No donations match this filter yet. Try the USSD simulator below or dial <%= process.env.AT_USSD_CODE || '*384*1234#' %>.</td></tr>
+          <% } %>
+          <% donations.forEach(d=>{ %>
+            <tr>
+              <td><%= d.id %></td>
+              <td class="mono"><%= d.phone_masked %></td>
+              <td><span class="pill"><%= d.cause_id %></span></td>
+              <td>KES <%= d.amount.toLocaleString() %></td>
+              <td><span class="status status-<%= d.status %>"><%= d.status %></span></td>
+              <td class="mono small" title="<%= d.checkout_request_id %>"><%= d.checkout_request_id ? d.checkout_request_id.slice(0,18) : '—' %></td>
+              <td class="small"><%= d.created_at %></td>
+              <td><%= d.synced_to_snowflake ? '✓' : '—' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Dev helpers -->
+    <details class="dev-box">
+      <summary>Developer helpers (USSD & payment simulation)</summary>
+      <div class="dev-grid">
+        <div>
+          <h4>Simulate USSD</h4>
+          <p class="small muted">POST /ussd with sessionId, phoneNumber, text</p>
+          <pre class="code">curl -X POST http://localhost:3000/ussd \
+  -d "sessionId=TEST123&phoneNumber=%2B254711082000&text="
+
+# Then:
+# text=1      (Donate)
+# text=1*1    (Cause 1)
+# text=1*1*100 (Amount 100)
+# text=1*1*100*1 (Confirm)</pre>
+        </div>
+        <div>
+          <h4>Simulate payment callback</h4>
+          <pre class="code">curl -X POST http://localhost:3000/payment-callback \
+  -H "Content-Type: application/json" \
+  -d '{"checkoutRequestId":"MOCK-...","status":"Success"}'
+
+# Or use the admin helper:
+# POST /payment-callback/simulate</pre>
+          <div style="margin-top:1rem">
+            <label class="small">Checkout ID to mark completed</label>
+            <div style="display:flex;gap:.5rem;margin-top:.25rem">
+              <input id="simId" placeholder="MOCK-..." style="flex:1;padding:.5rem;border:1px solid #ddd;border-radius:8px">
+              <button id="simBtn" class="btn btn-sm">Mark completed</button>
+            </div>
+            <span id="simStatus" class="small muted"></span>
+          </div>
+        </div>
+      </div>
+    </details>
+  </div>
+</section>
+
+<script>
+(function(){
+  const $ = s => document.getElementById(s);
+
+  // Google AI
+  $('genGoogle')?.addEventListener('click', async () => {
+    const btn = $('genGoogle'), out = $('googleSummary'), meta = $('googleMeta');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    out.textContent = 'Asking Gemini for a transparency summary...';
+    out.className = 'ai-output';
+    try {
+      const r = await fetch('/admin/generate-impact', { method:'POST' });
+      const data = await r.json();
+      if (!r.ok) { out.textContent = data.error || 'Failed'; meta.textContent=''; }
+      else { out.textContent = data.summary || JSON.stringify(data); meta.textContent = data.mock ? 'Mock mode — set GOOGLE_AI_API_KEY for live Gemini' : 'Generated by Gemini 1.5 Flash'; }
+    } catch(e){ out.textContent = 'Error: '+e.message; }
+    btn.disabled=false; btn.textContent='Generate summary';
+  });
+
+  // Cortex
+  $('genCortex')?.addEventListener('click', async () => {
+    const btn=$('genCortex'), out=$('cortexSummary'), meta=$('cortexMeta');
+    btn.disabled=true; btn.textContent='Querying Snowflake...';
+    out.textContent='Running Cortex COMPLETE on DONATIONS_ANALYTICS...';
+    out.className='ai-output';
+    try{
+      const r=await fetch('/admin/generate-cortex',{method:'POST'});
+      const data=await r.json();
+      out.textContent=data.summary||JSON.stringify(data);
+      meta.textContent=data.mock?'Local fallback — configure Snowflake for live Cortex':'Generated by Snowflake Cortex (llama3-8b)';
+    }catch(e){ out.textContent='Error: '+e.message; }
+    btn.disabled=false; btn.textContent='Refresh analytics';
+  });
+
+  // Sync
+  $('syncForm')?.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const s=$('syncStatus'); s.textContent='Syncing...';
+    try{
+      const r=await fetch('/admin/sync-snowflake',{method:'POST'});
+      const data=await r.json();
+      s.textContent = `Synced ${data.total} row(s). ` + (data.results?.length? data.results.map(x=>`#${x.id}:${x.mock?'mock':'live'}`).join(', ') : '');
+      setTimeout(()=>location.reload(), 1200);
+    }catch(err){ s.textContent='Error: '+err.message; }
+  });
+
+  // Sim payment
+  $('simBtn')?.addEventListener('click', async ()=>{
+    const id=$('simId').value.trim(); const s=$('simStatus');
+    if(!id) return s.textContent='Enter checkout id';
+    s.textContent='Sending...';
+    try{
+      const r=await fetch('/payment-callback/simulate',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({checkoutRequestId:id, status:'Success'})});
+      const data=await r.json();
+      s.textContent = r.ok ? 'Marked completed: #'+(data.donation?.id||'') : (data.error||'failed');
+      if(r.ok) setTimeout(()=>location.reload(),800);
+    }catch(e){ s.textContent='Error:'+e.message; }
+  });
+})();
+</script>
+
+<%- include('partials/footer') %>

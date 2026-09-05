@@ -1,0 +1,26 @@
+{
+  "name": "karibu-give",
+  "version": "1.0.0",
+  "description": "Karibu Give — USSD-based micro-donation platform (DEV.to generosity weekend challenge)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "init-db": "node src/db/init.js"
+  },
+  "keywords": ["ussd", "africastalking", "donations", "micro-donations"],
+  "license": "MIT",
+  "dependencies": {
+    "africastalking": "^0.7.4",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^16.5.0",
+    "ejs": "^3.1.9",
+    "express": "^4.19.2",
+    "snowflake-sdk": "^1.13.0",
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
