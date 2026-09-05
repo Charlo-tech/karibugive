@@ -3,6 +3,7 @@ const router = express.Router();
 const { causes, getCauseByIndex } = require('../db/causes');
 const { createDonation, getStats } = require('../services/donations');
 const { initiateCheckout } = require('../services/atClient');
+const { initiateMpesaStkPush } = require('../services/mpesa');
 
 // Simple in-memory session store: sessionId -> { step, causeIndex, amount }
 const sessions = new Map();
@@ -153,16 +154,47 @@ async function handleUssd(req, res) {
               response = ussdResponse('Invalid details. Please dial again.', true);
               sessions.delete(sessionId);
             } else {
-              // Create pending donation + trigger STK push
-              // Normalize phone: AT sends +254... already
+              // Create pending donation + trigger STK push via external M-Pesa service (Render) then fallback to AT
+              // AT sends +254..., Daraja expects 254..., mpesa.js normalizes for us
               const normalizedPhone = (phoneNumber || '').trim();
               let checkoutId = null;
+              let checkoutProvider = 'mpesa-service';
               try {
-                const result = await initiateCheckout(normalizedPhone, amount, cause.name);
-                checkoutId = result.checkoutRequestId;
+                // Priority: external M-Pesa service (https://mpesa-service-3s2d.onrender.com/stkpush)
+                // Set MPESA_SERVICE_URL to "disabled" or "mock" to skip and use AT mock only
+                const mpesaResult = await initiateMpesaStkPush(normalizedPhone, amount, cause.name);
+                checkoutId = mpesaResult.checkoutRequestId;
+                checkoutProvider = mpesaResult.provider;
+                console.log(`[USSD] M-Pesa STK result provider=${mpesaResult.provider} checkoutId=${checkoutId}`);
+
+                // If mpesa fell back to mock and AT is configured, try AT as second chance for a real checkout
+                if (mpesaResult.provider === 'mock' && process.env.AT_API_KEY) {
+                  try {
+                    console.log('[USSD] mpesa was mock — trying AT checkout as fallback');
+                    const atResult = await initiateCheckout(normalizedPhone, amount, cause.name);
+                    // Prefer AT's real id if it looks non-mock (not starting with MOCK)
+                    if (atResult && atResult.checkoutRequestId && !atResult.checkoutRequestId.startsWith('MOCK')) {
+                      checkoutId = atResult.checkoutRequestId;
+                      checkoutProvider = 'africastalking';
+                    } else if (atResult && atResult.raw && !atResult.raw.mock) {
+                      checkoutId = atResult.checkoutRequestId;
+                      checkoutProvider = 'africastalking';
+                    }
+                  } catch (atErr) {
+                    console.warn('[USSD] AT fallback failed', atErr.message);
+                  }
+                }
               } catch (e) {
-                console.error('[USSD] checkout error', e);
-                checkoutId = 'ERR-' + Date.now();
+                console.error('[USSD] mpesa checkout error', e);
+                // Final fallback to AT before giving up to ERR
+                try {
+                  const atFallback = await initiateCheckout(normalizedPhone, amount, cause.name);
+                  checkoutId = atFallback.checkoutRequestId;
+                  checkoutProvider = 'africastalking-fallback';
+                } catch (atErr2) {
+                  console.error('[USSD] AT fallback also failed', atErr2);
+                  checkoutId = 'ERR-' + Date.now();
+                }
               }
               try {
                 const donation = createDonation({
@@ -171,7 +203,7 @@ async function handleUssd(req, res) {
                   amount,
                   checkout_request_id: checkoutId
                 });
-                console.log(`[USSD] donation #${donation.id} pending checkout=${checkoutId}`);
+                console.log(`[USSD] donation #${donation.id} pending checkout=${checkoutId} via ${checkoutProvider}`);
               } catch (e) {
                 console.error('[USSD] DB insert failed', e);
               }

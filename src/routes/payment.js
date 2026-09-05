@@ -7,26 +7,54 @@ async function handlePaymentCallback(req, res) {
   console.log('[PAYMENT CALLBACK] method=' + req.method + ' body:', JSON.stringify(req.body));
   console.log('[PAYMENT CALLBACK] query:', JSON.stringify(req.query));
 
+  // Normalize: handle both AT and M-Pesa Daraja callback shapes
+  // Daraja (mpesa-service) shape: { Body: { stkCallback: { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata: { Item: [...] } } } }
+  // Some proxies flatten to { CheckoutRequestID, ResultCode, ResultDesc } or { Body: { stkCallback: {...} } }
+  let body = req.body || {};
+  // Unwrap Daraja stkCallback if present
+  let darajaCallback = null;
+  if (body.Body && body.Body.stkCallback) darajaCallback = body.Body.stkCallback;
+  else if (body.stkCallback) darajaCallback = body.stkCallback;
+  else if (body.CheckoutRequestID && body.ResultCode !== undefined) darajaCallback = body;
+
+  // For Daraja, synthesize data fields so existing logic works
+  if (darajaCallback) {
+    const rc = darajaCallback.ResultCode;
+    const checkoutIdDaraja = darajaCallback.CheckoutRequestID || darajaCallback.checkoutRequestID;
+    const statusDaraja = rc === 0 || rc === '0' ? 'Success' : 'Failed';
+    console.log(`[PAYMENT CALLBACK] Daraja stkCallback detected ResultCode=${rc} CheckoutRequestID=${checkoutIdDaraja}`);
+    // Inject Daraja fields into body for unified handling
+    body.checkoutRequestId = checkoutIdDaraja;
+    body.status = statusDaraja;
+    body.ResultCode = rc;
+    body.ResultDesc = darajaCallback.ResultDesc;
+    // Also preserve raw for logging
+    body._darajaRaw = darajaCallback;
+  }
+
   // AT sometimes sends as URL-encoded form, sometimes JSON, sometimes GET query — handle all
-  const body = req.body || {};
   const data = { ...req.query, ...body };
 
   // If GET with no checkout id, show help instead of 404 (allows browser to open endpoint)
-  const hasCheckoutKey = !!(data.checkoutRequestId || data.checkoutRequestID || data.transactionId || data.transId || data.requestId || data.checkout_request_id || data.id);
+  const hasCheckoutKey = !!(data.checkoutRequestId || data.checkoutRequestID || data.CheckoutRequestID || data.transactionId || data.transId || data.requestId || data.checkout_request_id || data.id);
   if (req.method === 'GET' && !hasCheckoutKey) {
     return res.type('text/plain').send(
       'Karibu Give payment callback is alive.\n' +
-      'AT will POST here with JSON or form: { checkoutRequestId, status }\n' +
+      'AT and M-Pesa Daraja callbacks both handled here.\n' +
+      'AT: POST { checkoutRequestId, status }\n' +
+      'Daraja: POST { Body: { stkCallback: { CheckoutRequestID, ResultCode, ResultDesc } } }\n' +
       'Examples:\n' +
       '  GET  /payment-callback?checkoutRequestId=MOCK-...&status=Success\n' +
-      '  POST /payment-callback -H "Content-Type: application/json" -d \'{"checkoutRequestId":"MOCK-...","status":"Success"}\'\n'
+      '  POST /payment-callback -H "Content-Type: application/json" -d \'{"checkoutRequestId":"MOCK-...","status":"Success"}\'\n' +
+      '  POST /payment-callback -d \'{"Body":{"stkCallback":{"CheckoutRequestID":"ws_CO_...","ResultCode":0,"ResultDesc":"Success"}}}\'\n'
     );
   }
 
-  // Try multiple key names for checkout id
+  // Try multiple key names for checkout id (include Daraja capitalized)
   const checkoutId =
     data.checkoutRequestId ||
     data.checkoutRequestID ||
+    data.CheckoutRequestID ||
     data.transactionId ||
     data.transId ||
     data.requestId ||
@@ -34,14 +62,23 @@ async function handlePaymentCallback(req, res) {
     data.id ||
     null;
 
-  // Status can be "Success", "Failed", "Completed", etc.
+  // Status can be "Success", "Failed", "Completed", etc. — also handle Daraja ResultCode
+  const darajaResultCode = data.ResultCode !== undefined ? String(data.ResultCode) : null;
+  if (darajaResultCode !== null) {
+    if (darajaResultCode === '0') {
+      // Daraja ResultCode 0 = success
+      data.status = 'Success';
+    } else {
+      data.status = 'Failed';
+    }
+  }
   const rawStatus = (data.status || data.transactionStatus || data.state || '').toString().toLowerCase();
   const isSuccess = ['success', 'completed', 'successful', 'paid'].includes(rawStatus);
   const isFailed = ['failed', 'failure', 'cancelled', 'canceled'].includes(rawStatus);
 
   // AT sandbox sometimes sends statusCode 0 for success — handle that
   const statusCode = data.statusCode !== undefined ? String(data.statusCode) : null;
-  const resolvedSuccess = isSuccess || statusCode === '0' || (!isFailed && rawStatus === '' && checkoutId);
+  const resolvedSuccess = isSuccess || statusCode === '0' || darajaResultCode === '0' || (!isFailed && rawStatus === '' && checkoutId);
 
   // If we can't find checkoutId, try to match by phone+amount fallback (for manual test)
   if (!checkoutId) {
