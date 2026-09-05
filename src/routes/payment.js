@@ -1,24 +1,27 @@
 const express = require('express');
 const router = express.Router();
-const { getDonationByCheckoutId, updateDonationStatus, markSynced } = require('../services/donations');
+const { getDonationByCheckoutId, updateDonationStatus } = require('../services/donations');
 const { syncDonationToSnowflake } = require('../services/snowflake');
 
-/**
- * POST /payment-callback
- * Africa's Talking hits this when mobile money payment resolves.
- * Sandbox payload shape varies; we handle multiple common AT callback shapes.
- *
- * Common fields: transactionId / checkoutRequestId / checkoutRequestID, status, value, phoneNumber
- * We'll attempt to extract checkoutRequestId from several possible keys.
- */
-router.post('/', async (req, res) => {
-  console.log('[PAYMENT CALLBACK] body:', JSON.stringify(req.body));
+async function handlePaymentCallback(req, res) {
+  console.log('[PAYMENT CALLBACK] method=' + req.method + ' body:', JSON.stringify(req.body));
   console.log('[PAYMENT CALLBACK] query:', JSON.stringify(req.query));
 
-  // AT sometimes sends as URL-encoded form, sometimes JSON — handle both
+  // AT sometimes sends as URL-encoded form, sometimes JSON, sometimes GET query — handle all
   const body = req.body || {};
-  // Also check req.query for GET-style callbacks
   const data = { ...req.query, ...body };
+
+  // If GET with no checkout id, show help instead of 404 (allows browser to open endpoint)
+  const hasCheckoutKey = !!(data.checkoutRequestId || data.checkoutRequestID || data.transactionId || data.transId || data.requestId || data.checkout_request_id || data.id);
+  if (req.method === 'GET' && !hasCheckoutKey) {
+    return res.type('text/plain').send(
+      'Karibu Give payment callback is alive.\n' +
+      'AT will POST here with JSON or form: { checkoutRequestId, status }\n' +
+      'Examples:\n' +
+      '  GET  /payment-callback?checkoutRequestId=MOCK-...&status=Success\n' +
+      '  POST /payment-callback -H "Content-Type: application/json" -d \'{"checkoutRequestId":"MOCK-...","status":"Success"}\'\n'
+    );
+  }
 
   // Try multiple key names for checkout id
   const checkoutId =
@@ -88,7 +91,10 @@ router.post('/', async (req, res) => {
     // Always respond 200 to prevent AT retry storm
     return res.status(200).json({ status: 'error', message: err.message });
   }
-});
+}
+
+router.get('/', handlePaymentCallback);
+router.post('/', handlePaymentCallback);
 
 // Debug helper: simulate callback for local testing (not in production)
 router.post('/simulate', async (req, res) => {

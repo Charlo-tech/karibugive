@@ -25,12 +25,27 @@ function ussdResponse(text, isEnd) {
 }
 
 /**
- * POST /ussd — Africa's Talking USSD callback
- * Body: sessionId, serviceCode, phoneNumber, text
- * text is the full USSD input concatenated with "*" e.g. "1*2*100*1"
+ * Shared USSD handler for both GET (browser testing) and POST (AT callback)
+ * AT sends POST with form-encoded body, but we also support GET query for manual browser tests
+ * so that visiting /ussd?sessionId=TEST&phoneNumber=+254...&text=1 works instead of 404.
  */
-router.post('/', async (req, res) => {
-  const { sessionId, serviceCode, phoneNumber, text } = req.body;
+async function handleUssd(req, res) {
+  // Support both POST body and GET query — AT uses POST, browser tests may use GET query
+  const src = req.method === 'GET' ? req.query : req.body;
+  const { sessionId, serviceCode, phoneNumber, text } = src || {};
+
+  // If GET with no USSD params, show a friendly help page instead of 404
+  if (req.method === 'GET' && !sessionId && !phoneNumber && !text) {
+    return res.type('text/plain').send(
+      'Karibu Give USSD endpoint is alive.\n' +
+      'AT uses POST — but GET also works for browser testing.\n' +
+      'Examples:\n' +
+      '  GET  /ussd?sessionId=TEST123&phoneNumber=%2B254711082000&text=\n' +
+      '  POST /ussd  body: sessionId=TEST123&phoneNumber=%2B254711082000&text=1\n' +
+      'Flow: "" -> "1" -> "1*1" -> "1*1*100" -> "1*1*100*1"\n' +
+      'See README for AT dashboard setup.'
+    );
+  }
   console.log(`[USSD] session=${sessionId} phone=${phoneNumber} text="${text}"`);
 
   // Normalize text — AT sends "" on first request
@@ -184,6 +199,9 @@ router.post('/', async (req, res) => {
 
   res.set('Content-Type', 'text/plain');
   res.send(response);
-});
+}
+
+router.get('/', handleUssd);
+router.post('/', handleUssd);
 
 module.exports = router;
