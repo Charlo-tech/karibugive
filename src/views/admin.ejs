@@ -10,6 +10,13 @@
       </div>
     </div>
 
+    <% if (typeof flash !== 'undefined' && flash) { %>
+      <div class="flash flash-success"><%= flash %></div>
+    <% } %>
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="flash flash-error"><%= error %></div>
+    <% } %>
+
     <!-- Summary cards -->
     <div class="kpi-grid">
       <div class="kpi">
@@ -33,16 +40,134 @@
       </div>
     </div>
 
-    <!-- Progress by cause -->
+    <!-- Progress by cause (active-aware) -->
     <div class="admin-causes">
       <% raisedByCause.forEach(c => { %>
-        <div class="mini-cause">
-          <span><%= c.emoji %> <strong><%= c.name %></strong></span>
+        <div class="mini-cause" style="<%= c.is_active ? '' : 'opacity:.6;border-style:dashed' %>">
+          <span><%= c.emoji %> <strong><%= c.name %></strong> <% if(c.is_active){ %><span class="badge-active">● active</span><% } else { %><span class="badge-inactive">○ inactive</span><% } %></span>
           <span>KES <%= c.raised.toLocaleString() %> / <%= c.target_amount.toLocaleString() %> (<%= c.progress %>%)</span>
           <div class="progress-bar small"><div class="progress-fill" style="width: <%= c.progress %>%"></div></div>
         </div>
       <% }) %>
     </div>
+
+    <!-- === MANAGE CAUSES === -->
+    <section class="causes-manage">
+      <div class="causes-manage-head">
+        <h2>Manage Charity Causes</h2>
+        <span class="muted small">
+          <%= typeof activeCauses !== 'undefined' ? activeCauses.length : raisedByCause.filter(c=>c.is_active).length %> of <%= maxActive %> active — only <strong>3 active</strong> at any time (USSD + landing show active only)
+        </span>
+      </div>
+
+      <% const _activeCount = (typeof activeCauses !== 'undefined' ? activeCauses.length : raisedByCause.filter(c=>c.is_active).length); %>
+      <% const _canActivate = _activeCount < maxActive; %>
+
+      <!-- All causes table -->
+      <div class="table-wrap" style="margin: .8rem 0 1rem">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Emoji</th><th>Name / ID</th><th>Description</th><th>Target</th><th>Raised</th><th>Status</th><th style="min-width:280px">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% (allCauses || raisedByCause).forEach(c => {
+                 const raised = raisedByCause.find(r=>r.id===c.id);
+                 const rAmt = raised ? raised.raised : 0;
+                 const rPct = raised ? raised.progress : 0;
+            %>
+              <tr>
+                <td style="text-align:center;font-size:1.3rem"><%= c.emoji %></td>
+                <td>
+                  <strong><%= c.name %></strong><br>
+                  <span class="mono small muted"><%= c.id %></span>
+                </td>
+                <td class="small" style="max-width:280px;white-space:normal"><%= c.description || '—' %></td>
+                <td>KES <%= c.target_amount.toLocaleString() %></td>
+                <td>
+                  KES <%= rAmt.toLocaleString() %><br>
+                  <span class="small muted"><%= rPct %>%</span>
+                </td>
+                <td>
+                  <% if (c.is_active) { %>
+                    <span class="status status-completed">active</span>
+                  <% } else { %>
+                    <span class="status" style="background:#f3f4f6;color:#6b7280">inactive</span>
+                  <% } %>
+                </td>
+                <td>
+                  <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+                    <!-- Toggle active -->
+                    <form method="POST" action="/admin/causes/<%= c.id %>/toggle" style="display:inline">
+                      <% if (c.is_active) { %>
+                        <button type="submit" class="btn btn-ghost btn-sm" title="Deactivate — will hide from USSD/landing">Deactivate</button>
+                      <% } else { %>
+                        <button type="submit" class="btn btn-sm <%= _canActivate ? 'btn-primary' : '' %>" <%= _canActivate ? '' : 'disabled title="Already 3 active — deactivate one first"' %>>
+                          <%= _canActivate ? 'Activate' : 'Full (3/3)' %>
+                        </button>
+                      <% } %>
+                    </form>
+                    <!-- Delete -->
+                    <form method="POST" action="/admin/causes/<%= c.id %>/delete" style="display:inline" onsubmit="return confirm('Delete cause <%= c.name %>? Only allowed if no donations exist.')">
+                      <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);border-color:#fecaca">Delete</button>
+                    </form>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('edit-<%= c.id %>').classList.toggle('hidden')">Edit</button>
+                  </div>
+                  <!-- Inline edit form -->
+                  <form id="edit-<%= c.id %>" method="POST" action="/admin/causes/<%= c.id %>/edit" class="hidden" style="margin-top:.6rem;display:grid;gap:.4rem;background:#fffaf3;padding:.6rem;border-radius:8px;border:1px dashed var(--border)">
+                    <input name="name" value="<%= c.name %>" placeholder="Name" required style="padding:.45rem;border:1px solid #e5e7eb;border-radius:6px">
+                    <input name="emoji" value="<%= c.emoji %>" placeholder="Emoji" maxlength="4" style="padding:.45rem;border:1px solid #e5e7eb;border-radius:6px;width:90px">
+                    <input name="target_amount" type="number" value="<%= c.target_amount %>" min="1000" step="1000" required style="padding:.45rem;border:1px solid #e5e7eb;border-radius:6px">
+                    <textarea name="description" rows="2" placeholder="Description" style="padding:.45rem;border:1px solid #e5e7eb;border-radius:6px;resize:vertical"><%= c.description %></textarea>
+                    <div style="display:flex;gap:.4rem">
+                      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                      <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('edit-<%= c.id %>').classList.add('hidden')">Cancel</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+            <% if ((allCauses || []).length === 0) { %>
+              <tr><td colspan="7" class="muted center">No causes yet — add one below.</td></tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Add cause form -->
+      <div class="add-cause-card">
+        <h3 style="margin:.2rem 0">Add New Cause</h3>
+        <p class="muted small" style="margin:0 0 .6rem">
+          <% if (!_canActivate) { %>
+            <span style="color:var(--warn);font-weight:700">⚠ 3 active causes already — new cause will be added as <em>inactive</em>. Deactivate one to make room.</span>
+          <% } else { %>
+            You can activate this cause immediately (<%= _activeCount %>/<%= maxActive %> active).
+          <% } %>
+        </p>
+        <form method="POST" action="/admin/causes" class="add-cause-form">
+          <div class="form-grid">
+            <label>Name *
+              <input name="name" required placeholder="e.g. Girls Education" maxlength="60">
+            </label>
+            <label>Emoji
+              <input name="emoji" placeholder="🎓" maxlength="4" value="❤️">
+            </label>
+            <label>Target (KES) *
+              <input name="target_amount" type="number" required min="1000" step="1000" value="300000">
+            </label>
+            <label style="display:flex;align-items:center;gap:.4rem;margin-top:1.4rem">
+              <input type="checkbox" name="is_active" <%= _canActivate ? 'checked' : '' %> <%= _canActivate ? '' : 'disabled' %>>
+              <span>Active <%= _canActivate ? '' : '(max reached)' %></span>
+            </label>
+          </div>
+          <label>Description
+            <textarea name="description" rows="2" placeholder="What will donations fund? Be specific for donor transparency." style="width:100%"></textarea>
+          </label>
+          <button type="submit" class="btn btn-primary" style="margin-top:.6rem">Add Cause</button>
+        </form>
+      </div>
+    </section>
 
     <!-- Two distinct AI cards -->
     <div class="ai-grid">
@@ -88,7 +213,7 @@
       <label> Cause
         <select name="cause_id">
           <option value="">All</option>
-          <% causes.forEach(c=>{ %><option value="<%=c.id%>" <%=filters.cause_id===c.id?'selected':''%>><%=c.name%></option><% }) %>
+          <% (allCauses||causes).forEach(c=>{ %><option value="<%=c.id%>" <%=filters.cause_id===c.id?'selected':''%>><%=c.name%></option><% }) %>
         </select>
       </label>
       <button type="submit" class="btn btn-sm">Filter</button>
@@ -129,15 +254,15 @@
       <div class="dev-grid">
         <div>
           <h4>Simulate USSD</h4>
-          <p class="small muted">POST /ussd with sessionId, phoneNumber, text</p>
+          <p class="small muted">POST /ussd with sessionId, phoneNumber, text (uses currently <strong>active</strong> causes only)</p>
           <pre class="code">curl -X POST http://localhost:3000/ussd \
   -d "sessionId=TEST123&phoneNumber=%2B254711082000&text="
 
 # Then:
-# text=1      (Donate)
-# text=1*1    (Cause 1)
+# text=1      (Donate — lists active causes)
+# text=1*1    (Cause 1 of active list)
 # text=1*1*100 (Amount 100)
-# text=1*1*100*1 (Confirm)</pre>
+# text=1*1*100*1 (Confirm — triggers STK push)</pre>
         </div>
         <div>
           <h4>Simulate payment callback</h4>
@@ -145,8 +270,9 @@
   -H "Content-Type: application/json" \
   -d '{"checkoutRequestId":"MOCK-...","status":"Success"}'
 
-# Or use the admin helper:
-# POST /payment-callback/simulate</pre>
+# Or Daraja style:
+# curl -X POST http://localhost:3000/mpesa-callback \
+#  -d '{"Body":{"stkCallback":{"CheckoutRequestID":"ws_CO_...","ResultCode":0}}}'</pre>
           <div style="margin-top:1rem">
             <label class="small">Checkout ID to mark completed</label>
             <div style="display:flex;gap:.5rem;margin-top:.25rem">
@@ -160,6 +286,23 @@
     </details>
   </div>
 </section>
+
+<style>
+.causes-manage{margin:1.2rem 0 1.4rem;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1rem}
+.causes-manage-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap}
+.causes-manage-head h2{margin:0;font-size:1.2rem}
+.badge-active{font-size:.7rem;background:#dcfce7;color:#166534;padding:.15rem .4rem;border-radius:999px;font-weight:700}
+.badge-inactive{font-size:.7rem;background:#f3f4f6;color:#6b7280;padding:.15rem .4rem;border-radius:999px}
+.add-cause-card{background:#fff7ed;border:1px solid #fde68a;border-radius:12px;padding:.9rem;margin-top:.8rem}
+.add-cause-form label{font-size:.85rem;font-weight:600;display:grid;gap:.25rem}
+.add-cause-form input,.add-cause-form textarea{padding:.5rem;border:1px solid #e5e7eb;border-radius:8px;background:#fff;font:inherit}
+.form-grid{display:grid;grid-template-columns:1.2fr .4fr .7fr auto;gap:.7rem;align-items:end}
+@media(max-width:800px){.form-grid{grid-template-columns:1fr 1fr}}
+.flash{padding:.7rem .9rem;border-radius:10px;margin-bottom:.9rem;font-weight:600}
+.flash-success{background:#dcfce7;border:1px solid #bbf7d0;color:#166534}
+.flash-error{background:#fee2e2;border:1px solid #fecaca;color:#991b1b}
+.hidden{display:none !important}
+</style>
 
 <script>
 (function(){

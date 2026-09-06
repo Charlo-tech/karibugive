@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { causes, getCauseByIndex } = require('../db/causes');
+const causesMod = require('../db/causes');
 const { createDonation, getStats } = require('../services/donations');
 const { initiateCheckout } = require('../services/atClient');
 const { initiateMpesaStkPush } = require('../services/mpesa');
@@ -93,14 +93,20 @@ async function handleUssd(req, res) {
       } else if (first === '1') {
         // Donate flow
         if (parts.length === 1) {
-          // Show causes
-          let menu = 'Choose a cause:\n';
-          causes.forEach((c, i) => {
-            menu += `${i + 1}. ${c.name}\n`;
-          });
-          menu += '0. Back';
-          response = ussdResponse(menu, false);
-          setSession(sessionId, { step: 'choose_cause' });
+          // Show active causes only (max 3) — admin controls which are active
+          const activeCauses = causesMod.getActiveCauses();
+          if (activeCauses.length === 0) {
+            response = ussdResponse('No active causes at the moment. Please try again later.\n0. Back', false);
+            setSession(sessionId, { step: 'choose_cause' });
+          } else {
+            let menu = 'Choose a cause:\n';
+            activeCauses.forEach((c, i) => {
+              menu += `${i + 1}. ${c.name}\n`;
+            });
+            menu += '0. Back';
+            response = ussdResponse(menu, false);
+            setSession(sessionId, { step: 'choose_cause' });
+          }
         } else if (parts.length === 2) {
           const choice = parts[1];
           if (choice === '0') {
@@ -109,7 +115,7 @@ async function handleUssd(req, res) {
               false
             );
           } else {
-            const cause = getCauseByIndex(parseInt(choice, 10));
+            const cause = causesMod.getCauseByIndex(parseInt(choice, 10));
             if (!cause) {
               response = ussdResponse('Invalid cause. Try again.\n0. Back', false);
             } else {
@@ -119,12 +125,12 @@ async function handleUssd(req, res) {
           }
         } else if (parts.length === 3) {
           const causeIdx = parseInt(parts[1], 10);
-          const cause = getCauseByIndex(causeIdx);
+          const cause = causesMod.getCauseByIndex(causeIdx);
           const amountStr = parts[2];
           if (amountStr === '0') {
             // back to cause list
             let menu = 'Choose a cause:\n';
-            causes.forEach((c, i) => { menu += `${i + 1}. ${c.name}\n`; });
+            causesMod.getActiveCauses().forEach((c, i) => { menu += `${i + 1}. ${c.name}\n`; });
             menu += '0. Back';
             response = ussdResponse(menu, false);
           } else {
@@ -143,7 +149,7 @@ async function handleUssd(req, res) {
           }
         } else if (parts.length === 4) {
           const causeIdx = parseInt(parts[1], 10);
-          const cause = getCauseByIndex(causeIdx);
+          const cause = causesMod.getCauseByIndex(causeIdx);
           const amount = parseInt(parts[2], 10);
           const confirm = parts[3];
           if (confirm === '2' || confirm === '0') {

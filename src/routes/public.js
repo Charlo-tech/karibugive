@@ -4,7 +4,7 @@ const { getStats, getRaisedByCause } = require('../services/donations');
 
 router.get('/', (req, res) => {
   const stats = getStats();
-  const causes = getRaisedByCause();
+  const causes = getRaisedByCause({ activeOnly: true });
   res.render('index', {
     stats,
     causes,

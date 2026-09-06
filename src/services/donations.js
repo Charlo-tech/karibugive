@@ -1,5 +1,5 @@
 const db = require('../db/db');
-const { causes } = require('../db/causes');
+const causesMod = require('../db/causes');
 
 /**
  * Donation service — SQLite CRUD helpers
@@ -58,14 +58,14 @@ function getStats() {
   return { totalRaised, totalDonations, completed, pending, failed };
 }
 
-function getRaisedByCause() {
+function getRaisedByCause({ activeOnly = false } = {}) {
   const rows = db.prepare(`
     SELECT cause_id, COALESCE(SUM(amount),0) as raised, COUNT(*) as count
     FROM donations WHERE status='completed' GROUP BY cause_id
   `).all();
   const map = {};
   for (const r of rows) map[r.cause_id] = r;
-  // ensure every cause has entry
+  const causes = activeOnly ? causesMod.getActiveCauses() : causesMod.getAllCauses();
   return causes.map(c => ({
     ...c,
     raised: map[c.id]?.raised || 0,

@@ -52,4 +52,31 @@ try {
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Seed default causes if table is empty (first run / migration from hardcoded list)
+try {
+  const count = db.prepare('SELECT COUNT(*) as c FROM causes').get().c;
+  if (count === 0) {
+    console.log('[DB] Seeding default causes (3 active)');
+    const seed = [
+      { id: 'clean-water', name: 'Clean Water', description: 'Provide clean drinking water to rural communities in Turkana.', target_amount: 500000, emoji: '💧', is_active: 1 },
+      { id: 'school-books', name: 'School Books', description: 'Supply textbooks and stationery to primary schools in Kibera.', target_amount: 300000, emoji: '📚', is_active: 1 },
+      { id: 'health-clinic', name: 'Health Clinic', description: 'Support mobile health clinics serving remote villages.', target_amount: 750000, emoji: '🏥', is_active: 1 },
+    ];
+    const stmt = db.prepare('INSERT INTO causes (id, name, description, target_amount, emoji, is_active) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const c of seed) {
+      stmt.run(c.id, c.name, c.description, c.target_amount, c.emoji, c.is_active);
+    }
+  } else {
+    // Ensure at least 3 active if DB was seeded before is_active column existed (migration)
+    // For older DBs where is_active may be null, activate all
+    const active = db.prepare('SELECT COUNT(*) as c FROM causes WHERE is_active=1').get().c;
+    if (active === 0) {
+      db.exec('UPDATE causes SET is_active=1 WHERE id IN (SELECT id FROM causes LIMIT 3)');
+      console.log('[DB] Migrated causes: activated first 3');
+    }
+  }
+} catch (e) {
+  console.warn('[DB] cause seeding failed', e.message);
+}
+
 module.exports = db;
