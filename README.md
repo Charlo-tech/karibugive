@@ -28,7 +28,7 @@ Admin: `http://localhost:3000/admin` (default `admin / karibu123` — set `ADMIN
 ## USSD flow
 
 ```
-*384*1234# →
+*384*6120# →
   1. Donate  2. Check total raised  0. Exit
   → pick cause (1..3) → enter amount (10-70000)
   → 1. Confirm  2. Cancel

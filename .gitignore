@@ -4,3 +4,4 @@ data/*.db
 data/*.db-*
 npm-debug.log
 .DS_Store
+SUBMISSION.md
